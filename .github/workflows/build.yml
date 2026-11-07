@@ -9,7 +9,7 @@ on:
         description: replacement for -march=armv8.2-a+fp16+rcpc+dotprod+crypto
         default: armv8-a+crc
       build_args:
-        default: --clang19 release --no-linuxbrew --skip-java
+        default: --clang17 release --no-linuxbrew --skip-java
 jobs:
   build:
     runs-on: ubuntu-24.04-arm
