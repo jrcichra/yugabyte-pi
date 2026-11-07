@@ -12,8 +12,15 @@ on:
         default: --clang17 release --no-linuxbrew --skip-java
 jobs:
   build:
+    # A chain of ~55 minute slices sharing a ccache: every slice's log is readable when it ends,
+    # and the 6h job limit stops mattering.
+    strategy:
+      max-parallel: 1
+      fail-fast: false
+      matrix:
+        slice: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
     runs-on: ubuntu-24.04-arm
-    timeout-minutes: 360
+    timeout-minutes: 90
     container:
       image: yugabyteci/yb_build_infra_almalinux8_aarch64:v2026-01-27T21_32_05
       options: --user root
@@ -28,24 +35,50 @@ jobs:
         run: |
           sed -i 's|-march=armv8.2-a+fp16+rcpc+dotprod+crypto|-march=${{ inputs.march }}|; s|ADD_CXX_FLAGS("-mtune=neoverse-n1")|ADD_CXX_FLAGS("-mtune=cortex-a72")|' CMakeLists.txt
           git diff --stat; grep -n -E 'march|mtune' CMakeLists.txt
-      - uses: actions/cache@v4
+      - name: Already finished in an earlier slice?
+        id: done
+        uses: actions/cache/restore@v4
+        with:
+          path: done.marker
+          key: done-${{ github.run_id }}-${{ github.run_attempt }}
+          lookup-only: true
+      - uses: actions/cache/restore@v4
+        if: steps.done.outputs.cache-hit != 'true'
         with:
           path: ccache
-          key: ccache-${{ inputs.tag }}-${{ inputs.march }}-${{ github.run_id }}
+          key: ccache-unused-${{ github.run_id }}-${{ matrix.slice }}
           restore-keys: ccache-${{ inputs.tag }}-${{ inputs.march }}-
-      - name: Build (stops at 5h40 so the ccache still gets saved)
+      - name: Build slice ${{ matrix.slice }}
+        id: build
+        if: steps.done.outputs.cache-hit != 'true'
         working-directory: yb
         env:
           CCACHE_DIR: ${{ github.workspace }}/ccache
-          CCACHE_MAXSIZE: 6G
+          CCACHE_MAXSIZE: 8G
         run: |
           nproc; free -g | head -2
-          timeout 340m ./yb_build.sh ${{ inputs.build_args }} 2>&1 | tail -n 4000 > ../build.log; rc=${PIPESTATUS[0]}
-          tail -40 ../build.log; echo "rc=$rc"
-          [ "$rc" = 124 ] && echo "timed out; re-run to continue from ccache" && exit 0
+          mkdir -p "$CCACHE_DIR"
+          timeout 52m ./yb_build.sh ${{ inputs.build_args }} 2>&1 | tee ../build.log | grep -E --line-buffered '^\[[0-9]+/[0-9]+\]|error:|Error|FAILED' | awk 'NR%200==1 || /error|FAILED/' | cut -c1-200
+          rc=${PIPESTATUS[0]}
+          echo "rc=$rc"; grep -E '^\[[0-9]+/[0-9]+\]' ../build.log | tail -1
+          ccache -s 2>/dev/null | head -8 || true
+          if [ "$rc" = 124 ]; then echo "slice timed out; next slice continues from ccache"; exit 0; fi
+          if [ "$rc" = 0 ]; then touch ../done.marker; echo finished=true >> "$GITHUB_OUTPUT"; fi
           exit $rc
-      - uses: actions/upload-artifact@v4
-        if: always()
+      - name: Save ccache
+        if: always() && steps.done.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
         with:
-          name: build-log
+          path: ccache
+          key: ccache-${{ inputs.tag }}-${{ inputs.march }}-${{ github.run_id }}-${{ matrix.slice }}
+      - name: Mark finished
+        if: steps.build.outputs.finished == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: done.marker
+          key: done-${{ github.run_id }}-${{ github.run_attempt }}
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.done.outputs.cache-hit != 'true'
+        with:
+          name: build-log-${{ matrix.slice }}
           path: build.log
