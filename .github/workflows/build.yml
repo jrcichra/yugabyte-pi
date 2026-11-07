@@ -1,0 +1,51 @@
+name: build
+# Rebuild yb-server for plain ARMv8.0 (Pi 4) on a native arm64 runner.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        default: v2024.2.7.3
+      march:
+        description: replacement for -march=armv8.2-a+fp16+rcpc+dotprod+crypto
+        default: armv8-a+crc
+      build_args:
+        default: --clang19 release --no-linuxbrew --skip-java
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 360
+    container:
+      image: yugabyteci/yb_build_infra_almalinux8_aarch64:v2026-01-27T21_32_05
+      options: --user root
+    steps:
+      - name: Source
+        run: |
+          dnf -q -y install git >/dev/null 2>&1 || true
+          git config --global --add safe.directory '*'
+          git clone -q --depth 1 --branch "${{ inputs.tag }}" https://github.com/yugabyte/yugabyte-db.git yb
+      - name: Patch CPU flags
+        working-directory: yb
+        run: |
+          sed -i 's|-march=armv8.2-a+fp16+rcpc+dotprod+crypto|-march=${{ inputs.march }}|; s|ADD_CXX_FLAGS("-mtune=neoverse-n1")|ADD_CXX_FLAGS("-mtune=cortex-a72")|' CMakeLists.txt
+          git diff --stat; grep -n -E 'march|mtune' CMakeLists.txt
+      - uses: actions/cache@v4
+        with:
+          path: ccache
+          key: ccache-${{ inputs.tag }}-${{ inputs.march }}-${{ github.run_id }}
+          restore-keys: ccache-${{ inputs.tag }}-${{ inputs.march }}-
+      - name: Build (stops at 5h40 so the ccache still gets saved)
+        working-directory: yb
+        env:
+          CCACHE_DIR: ${{ github.workspace }}/ccache
+          CCACHE_MAXSIZE: 6G
+        run: |
+          nproc; free -g | head -2
+          timeout 340m ./yb_build.sh ${{ inputs.build_args }} 2>&1 | tail -n 4000 > ../build.log; rc=${PIPESTATUS[0]}
+          tail -40 ../build.log; echo "rc=$rc"
+          [ "$rc" = 124 ] && echo "timed out; re-run to continue from ccache" && exit 0
+          exit $rc
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-log
+          path: build.log
