@@ -1,0 +1,40 @@
+name: repro
+on:
+  workflow_dispatch:
+    inputs:
+      image:
+        description: Official image to inspect
+        default: yugabytedb/yugabyte:2024.2.7.3-b1
+jobs:
+  repro:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tools
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq qemu-user-static binutils-aarch64-linux-gnu gdb-multiarch
+      - name: Export the arm64 rootfs
+        run: |
+          mkdir rootfs
+          cid=$(docker create --platform linux/arm64 "${{ inputs.image }}")
+          docker export "$cid" | tar -x -C rootfs
+          du -sh rootfs
+          find rootfs \( -name yb-master -o -name yb-tserver -o -name yugabyted \) -type f | tee bins.txt
+      - name: Run yb-master under QEMU (cortex-a72 = Pi 4, neoverse-n1 = control)
+        continue-on-error: true
+        run: |
+          bin=$(grep '/yb-master$' bins.txt | head -1)
+          for cpu in neoverse-n1 cortex-a72; do
+            echo "=== -cpu $cpu"
+            qemu-aarch64-static -cpu $cpu -L rootfs "$bin" --version 2>&1 | tail -5 || true
+            echo "exit: ${PIPESTATUS[0]}"
+          done
+      - name: Scan for instructions a Pi 4 lacks
+        run: |
+          for b in $(cat bins.txt); do
+            echo "##### $b"
+            ./scripts/scan.sh "$b"
+          done 2>&1 | tee scan.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: scan
+          path: scan.txt
