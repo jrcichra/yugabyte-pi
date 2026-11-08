@@ -27,6 +27,18 @@ jobs:
           git fetch -q --depth 1 origin ${{ inputs.commit }} && git checkout -q FETCH_HEAD
       - name: Rust (clockbound wants ~/.cargo/bin/cargo)
         run: curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal && ~/.cargo/bin/cargo --version
+      - name: Pre-fetch the clang toolchain via the API (github.com/releases/download is 504ing for it)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          dnf -q -y install 'dnf-command(config-manager)' >/dev/null 2>&1; command -v gh >/dev/null || { dnf -q -y config-manager --add-repo https://cli.github.com/packages/rpm/gh-cli.repo && dnf -q -y install gh; }
+          T=v17.0.6-yb-1-1720465672-9b881774-almalinux8-aarch64; N=yb-llvm-$T.tar.gz
+          mkdir -p /opt/yb-build/llvm && cd /opt/yb-build/llvm
+          for f in $N $N.sha256; do
+            id=$(gh api repos/yugabyte/build-clang/releases/tags/$T --jq ".assets[]|select(.name==\"$f\")|.id")
+            gh api -H "Accept: application/octet-stream" repos/yugabyte/build-clang/releases/assets/$id > $f
+          done
+          ls -l; sha256sum -c $N.sha256
       - name: Patch CPU flags
         working-directory: /opt/yb-build/thirdparty/tp
         run: |
