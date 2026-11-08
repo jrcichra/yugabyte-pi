@@ -76,7 +76,7 @@ jobs:
         run: |
           nproc; free -g | head -2
           mkdir -p "$CCACHE_DIR"
-          set -o pipefail
+          set -o pipefail; set +e  # a slice timeout (124) must reach the rc check below, not abort the step
           timeout 52m stdbuf -oL -eL ./yb_build.sh ${{ inputs.build_args }} 2>&1 | tee ../build.log | stdbuf -oL cut -c1-300
           rc=${PIPESTATUS[0]}
           echo "rc=$rc"; grep -E '^\[[0-9]+/[0-9]+\]' ../build.log | tail -1
