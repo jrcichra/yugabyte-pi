@@ -1,0 +1,177 @@
+name: release
+# YugabyteDB for the Raspberry Pi 4 (Cortex-A72, ARMv8.0). Upstream's arm64 builds target armv8.2+rcpc and SIGILL on a Pi 4.
+#   thirdparty: rebuild yugabyte-db-thirdparty (libc++, absl, tcmalloc, ...) for armv8-a
+#   build:      rebuild yb-master/yb-tserver/postgres/tools against it
+#   image:      overlay onto upstream's arm64 image, test every binary + a master/tserver/YSQL session under QEMU as a
+#               Cortex-A72, then publish ghcr.io/<owner>/yugabyte-pi:<tag> = upstream's stock amd64 + our arm64
+on:
+  workflow_dispatch:
+    inputs:
+      yb_tag:
+        default: v2024.2.7.3
+      base:
+        description: upstream image to overlay (and to use as-is for amd64)
+        default: yugabytedb/yugabyte:2024.2.7.3-b1
+      tag:
+        description: published tag
+        default: 2024.2.7.3-b1
+      thirdparty_commit:
+        default: a688dff1ce66bc405d4ae1e7dd466cfa9f989f90
+      publish:
+        type: boolean
+        default: true
+env:
+  MARCH: armv8-a+crc
+  MTUNE: cortex-a72
+  # the RPATHs bake this path in; the image reproduces it
+  BUILD_DIR: /__w/yugabyte-pi/yugabyte-pi/yb/build/release-clang17-dynamic-ninja
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  thirdparty:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 360
+    container:
+      image: yugabyteci/yb_build_infra_almalinux8_aarch64:v2026-01-27T21_32_05
+      options: --user root --init   # --init: bazel (abseil) needs its server reaped
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tools (git, gh, rust for clockbound) and the GitHub 504 workarounds
+        run: |
+          dnf -q -y install git 'dnf-command(config-manager)' >/dev/null 2>&1
+          dnf -q -y config-manager --add-repo https://cli.github.com/packages/rpm/gh-cli.repo && dnf -q -y install gh
+          curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal
+          install -m755 scripts/curl-gh /usr/local/bin/curl-gh
+      - name: Source and CPU flags
+        run: |
+          git config --global --add safe.directory '*'
+          mkdir -p /opt/yb-build/thirdparty/tp && cd /opt/yb-build/thirdparty/tp
+          git init -q && git remote add origin https://github.com/yugabyte/yugabyte-db-thirdparty.git
+          git fetch -q --depth 1 origin ${{ inputs.thirdparty_commit }} && git checkout -q FETCH_HEAD
+          sed -i "s|'-march=armv8.2-a+fp16+rcpc+dotprod+crypto'|'-march=$MARCH'|; s|'-mtune=neoverse-n1'|'-mtune=$MTUNE'|" python/yugabyte_db_thirdparty/builder.py
+          python3 "$GITHUB_WORKSPACE/scripts/patch-downloader.py"
+          git diff --stat
+      - uses: actions/cache/restore@v4
+        with:
+          path: ccache
+          key: tp-ccache-unused-${{ github.run_id }}
+          restore-keys: tp-ccache-${{ inputs.thirdparty_commit }}-${{ env.MARCH }}-
+      - name: Build (stops itself before the job limit so the ccache still saves)
+        working-directory: /opt/yb-build/thirdparty/tp
+        env:
+          CCACHE_DIR: ${{ github.workspace }}/ccache
+          CCACHE_MAXSIZE: 8G
+          YB_THIRDPARTY_ARCHIVE_NAME_SUFFIX: pi
+        run: |
+          timeout 340m stdbuf -oL -eL ./build_thirdparty.sh --toolchain=llvm17 --skip-sanitizers \
+            --use-ccache --concise-output --create-package --cleanup-before-packaging 2>&1 | stdbuf -oL cut -c1-300
+          exit ${PIPESTATUS[0]}
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: ccache
+          key: tp-ccache-${{ inputs.thirdparty_commit }}-${{ env.MARCH }}-${{ github.run_id }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: thirdparty
+          path: /opt/yb-build/thirdparty/tp/archive.tar.gz
+          compression-level: 0
+          retention-days: 1
+
+  build:
+    needs: thirdparty
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 360
+    container:
+      image: yugabyteci/yb_build_infra_almalinux8_aarch64:v2026-01-27T21_32_05
+      options: --user root
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: thirdparty, path: tpdl }
+      - name: Source, CPU flags, thirdparty
+        run: |
+          dnf -q -y install git >/dev/null 2>&1 || true
+          git config --global --add safe.directory '*'
+          git clone -q --depth 1 --branch "${{ inputs.yb_tag }}" https://github.com/yugabyte/yugabyte-db.git yb
+          sed -i "s|-march=armv8.2-a+fp16+rcpc+dotprod+crypto|-march=$MARCH|; s|ADD_CXX_FLAGS(\"-mtune=neoverse-n1\")|ADD_CXX_FLAGS(\"-mtune=$MTUNE\")|" yb/CMakeLists.txt
+          # unpacked at the path it was built at: the libs' RPATHs point there
+          mkdir -p /opt/yb-build/thirdparty && tar -xzf tpdl/archive.tar.gz -C /opt/yb-build/thirdparty && rm -rf tpdl
+      - uses: actions/cache/restore@v4
+        with:
+          path: ccache
+          key: ccache-unused-${{ github.run_id }}
+          restore-keys: ccache-${{ inputs.yb_tag }}-${{ env.MARCH }}-
+      - name: Build
+        working-directory: yb
+        env:
+          YB_THIRDPARTY_DIR: /opt/yb-build/thirdparty/tp
+          CCACHE_DIR: ${{ github.workspace }}/ccache
+          CCACHE_MAXSIZE: 8G
+        run: |
+          mkdir -p "$CCACHE_DIR"
+          timeout 340m stdbuf -oL -eL ./yb_build.sh --clang17 release --no-linuxbrew --skip-java 2>&1 | stdbuf -oL cut -c1-300
+          exit ${PIPESTATUS[0]}
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: ccache
+          key: ccache-${{ inputs.yb_tag }}-${{ env.MARCH }}-${{ github.run_id }}
+      - name: Package (the runtime tree and the thirdparty libs, at their absolute paths)
+        run: |
+          B=yb/build/release-clang17-dynamic-ninja; TP=$(cat "$B/thirdparty_path.txt")
+          ROOT=$PWD/$B
+          { for f in bin lib postgres share openssl-config gflag_allowlist.txt master_flags.xml tserver_flags.xml auto_flags.json version_metadata.json; do echo "$ROOT/$f"; done
+            find "$TP" \( -name '*.so' -o -name '*.so.*' \); echo "$TP/installed/common/bin/redis-cli"; } | sed 's|^/||' > tree.list
+          tar -czf tree.tgz -C / -T tree.list && ls -lh tree.tgz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tree
+          path: tree.tgz
+          compression-level: 0
+          retention-days: 7
+
+  image:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+        with: { platforms: arm64 }
+      - uses: docker/setup-buildx-action@v3
+      - uses: actions/download-artifact@v4
+        with: { name: tree }
+      - name: Build the arm64 image
+        run: |
+          mkdir image/ctx && tar -xzf tree.tgz -C image/ctx && sudo chmod -R a+rX image/ctx
+          docker buildx build --platform linux/arm64 --build-arg BASE=${{ inputs.base }} --build-arg B=$BUILD_DIR -t yugabyte-pi:test --load image
+          cid=$(docker create --platform linux/arm64 yugabyte-pi:test)
+          mkdir rootfs && docker export "$cid" | tar -x -C rootfs
+      - name: Every executable runs as a Cortex-A72 (no SIGILL)
+        run: ./scripts/tools-smoke.sh rootfs
+      - name: Master + tserver + YSQL create/insert/select as a Cortex-A72
+        timeout-minutes: 30
+        run: ./scripts/ysql-smoke.sh rootfs "$BUILD_DIR"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-logs
+          path: |
+            master.log
+            tserver.log
+      - uses: docker/login-action@v3
+        if: inputs.publish
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Publish ghcr.io/${{ github.repository_owner }}/yugabyte-pi:${{ inputs.tag }} (amd64 stock + arm64 Pi 4)
+        if: inputs.publish
+        run: |
+          docker buildx build --platform linux/amd64,linux/arm64 --build-arg BASE=${{ inputs.base }} --build-arg B=$BUILD_DIR \
+            -t ghcr.io/${{ github.repository_owner }}/yugabyte-pi:${{ inputs.tag }} --push image
