@@ -38,7 +38,11 @@ jobs:
             id=$(gh api repos/yugabyte/build-clang/releases/tags/$T --jq ".assets[]|select(.name==\"$f\")|.id")
             gh api -H "Accept: application/octet-stream" repos/yugabyte/build-clang/releases/assets/$id > $f
           done
-          ls -l; sha256sum -c $N.sha256
+          sha256sum -c $N.sha256
+          # the tool skips its (504ing) download if the extracted dir already exists
+          D=yb-llvm-$T; mkdir x && tar -xzf $N -C x && top=$(ls x); echo "archive top: $top"
+          if [ "$(echo "$top" | wc -l)" = 1 ]; then mv "x/$top" "$D"; else mv x "$D"; fi
+          rmdir x 2>/dev/null || true; rm -f $N $N.sha256; ls "$D" | head
       - name: Patch CPU flags
         working-directory: /opt/yb-build/thirdparty/tp
         run: |
