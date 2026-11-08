@@ -54,6 +54,9 @@ jobs:
         working-directory: /opt/yb-build/thirdparty/tp
         run: |
           sed -i "s|'-march=armv8.2-a+fp16+rcpc+dotprod+crypto'|'-march=${{ inputs.march }}'|; s|'-mtune=neoverse-n1'|'-mtune=${{ inputs.mtune }}'|" python/yugabyte_db_thirdparty/builder.py
+          # route github release downloads through the API (see scripts/curl-gh)
+          git clone -q --depth 1 https://github.com/${{ github.repository }} /opt/pi && install -m755 /opt/pi/scripts/curl-gh /usr/local/bin/curl-gh
+          sed -i 's|self.curl_path = .*|self.curl_path = "/usr/local/bin/curl-gh"|' python/yugabyte_db_thirdparty/download_manager.py
           git diff; nproc; free -g | head -2
       - uses: actions/cache/restore@v4
         with:
@@ -63,6 +66,7 @@ jobs:
       - name: Build (stops itself at 5h40m so the ccache still gets saved)
         working-directory: /opt/yb-build/thirdparty/tp
         env:
+          GH_TOKEN: ${{ github.token }}
           CCACHE_DIR: ${{ github.workspace }}/ccache
           CCACHE_MAXSIZE: 8G
           YB_THIRDPARTY_ARCHIVE_NAME_SUFFIX: pi

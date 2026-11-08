@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# curl wrapper: github.com/<o>/<r>/releases/download/... is 504ing (also via redirects, e.g. openssl.org);
+# the same assets download fine through the API, so use `gh api` for those and real curl otherwise.
+# usage mirrors the thirdparty downloader: curl -o FILE -L --silent --show-error --location URL
+out=""; url=""; prev=""
+for a in "$@"; do [ "$prev" = -o ] && out=$a; prev=$a; url=$a; done
+final=$(/usr/bin/curl -sIL -m 30 -o /dev/null -w '%{url_effective}' "$url" 2>/dev/null)
+re='^https://github\.com/([^/]+)/([^/]+)/releases/download/([^/]+)/([^/?]+)'
+if [[ $final =~ $re ]]; then
+  o=${BASH_REMATCH[1]} r=${BASH_REMATCH[2]} t=${BASH_REMATCH[3]} n=${BASH_REMATCH[4]}
+  id=$(gh api "repos/$o/$r/releases/tags/$t" --jq ".assets[]|select(.name==\"$n\")|.id") || exit 1
+  [ -n "$id" ] || { echo "curl-gh: no asset $n in $o/$r $t" >&2; exit 1; }
+  exec gh api -H "Accept: application/octet-stream" "repos/$o/$r/releases/assets/$id" > "$out"
+fi
+exec /usr/bin/curl "$@"
