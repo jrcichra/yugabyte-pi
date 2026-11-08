@@ -45,9 +45,25 @@ jobs:
           mkdir rootfs && docker export "$cid" | tar -x -C rootfs
           ls -l rootfs/home/yugabyte/bin/yb-master rootfs/home/yugabyte/bin/yb-tserver
           ./scripts/ysql-smoke.sh rootfs /__w/yugabyte-pi/yugabyte-pi/yb/build/release-clang17-dynamic-ninja
+      - name: Scan the whole image for instructions a Pi 4 lacks (outline-atomic helpers ignored)
+        if: always()
+        run: ./scripts/scan-offenders.sh rootfs/home/yugabyte rootfs/__w rootfs/opt/yb-build 2>&1 | tee offenders.txt | head -60
+      - name: Save the image
+        run: docker save yugabyte-pi:test | gzip -1 > yugabyte-pi-2024.2.7.3-pi4.tar.gz && ls -lh yugabyte-pi-2024.2.7.3-pi4.tar.gz
       - uses: actions/upload-artifact@v4
         if: always()
-        with: { name: image-smoke, path: "master.log\ntserver.log" }
+        with:
+          name: image-smoke
+          path: |
+            master.log
+            tserver.log
+            offenders.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: yugabyte-pi-image
+          path: yugabyte-pi-2024.2.7.3-pi4.tar.gz
+          compression-level: 0
+          retention-days: 14
       - uses: docker/login-action@v3
         if: inputs.push
         with:

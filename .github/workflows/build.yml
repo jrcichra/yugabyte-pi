@@ -91,7 +91,8 @@ jobs:
           B=yb/build/release-clang17-dynamic-ninja
           ls "$B" "$B/bin" "$B/lib" 2>&1 | head -80
           mkdir overlay
-          tar -c -C "$B" bin/yb-master bin/yb-tserver lib postgres gflag_allowlist.txt master_flags.xml tserver_flags.xml auto_flags.json version_metadata.json | tar -x -C overlay
+          ls "$B/bin" | tr '\n' ' '; echo
+          tar -c -C "$B" bin lib postgres gflag_allowlist.txt master_flags.xml tserver_flags.xml auto_flags.json version_metadata.json | tar -x -C overlay
           du -sh overlay/*
           # ARMv8.1+ atomics / dotprod / rcpc that a Pi 4 (cortex-a72) lacks, per ELF file
           command -v objdump >/dev/null || dnf -q -y install binutils >/dev/null 2>&1
@@ -104,7 +105,7 @@ jobs:
           # standalone tree at its absolute build paths (RPATHs point there) incl. the thirdparty .so files
           TP=$(cat "$B/thirdparty_path.txt"); echo "thirdparty: $TP"
           ROOT=$PWD/$B
-          { for f in bin/yb-master bin/yb-tserver lib postgres share openssl-config gflag_allowlist.txt master_flags.xml tserver_flags.xml auto_flags.json version_metadata.json; do echo "$ROOT/$f"; done
+          { for f in bin lib postgres share openssl-config gflag_allowlist.txt master_flags.xml tserver_flags.xml auto_flags.json version_metadata.json; do echo "$ROOT/$f"; done
             find "$TP" \( -name '*.so' -o -name '*.so.*' \) ; } | sed 's|^/||' > abs.list
           wc -l abs.list
           tar -czf overlay-abs.tgz -C / -T abs.list

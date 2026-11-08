@@ -5,6 +5,7 @@ ARG BASE=yugabytedb/yugabyte:2024.2.7.3-b1
 FROM ${BASE}
 COPY ctx/ /
 # upstream's yb-server is the armv8.2 build; make every entry point resolve to ours
-RUN rm -f /home/yugabyte/bin/yb-master /home/yugabyte/bin/yb-tserver /home/yugabyte/bin/yb-server \
- && ln -s /__w/yugabyte-pi/yugabyte-pi/yb/build/release-clang17-dynamic-ninja/bin/yb-master  /home/yugabyte/bin/yb-master \
- && ln -s /__w/yugabyte-pi/yugabyte-pi/yb/build/release-clang17-dynamic-ninja/bin/yb-tserver /home/yugabyte/bin/yb-tserver
+ARG B=/__w/yugabyte-pi/yugabyte-pi/yb/build/release-clang17-dynamic-ninja
+RUN rm -f /home/yugabyte/bin/yb-server \
+ && ln -sf $B/bin/yb-master /home/yugabyte/bin/yb-master && ln -sf $B/bin/yb-tserver /home/yugabyte/bin/yb-tserver \
+ && for f in $B/bin/*; do n=$(basename "$f"); [ -e "/home/yugabyte/bin/$n" ] && ln -sf "$f" "/home/yugabyte/bin/$n"; done; true
