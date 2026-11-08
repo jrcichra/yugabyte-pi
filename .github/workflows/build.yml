@@ -21,7 +21,7 @@ jobs:
       max-parallel: 1
       fail-fast: false
       matrix:
-        slice: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        slice: [1, 2, 3]
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 90
     container:
