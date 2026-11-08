@@ -38,11 +38,15 @@ jobs:
           du -sh image/ctx
       - name: Build the arm64 image
         run: docker buildx build --platform linux/arm64 -t yugabyte-pi:test --load image
-      - name: Smoke test the image filesystem (QEMU cortex-a72, master + tserver + YSQL)
-        timeout-minutes: 30
+      - name: Export the image filesystem
         run: |
           cid=$(docker create --platform linux/arm64 yugabyte-pi:test)
           mkdir rootfs && docker export "$cid" | tar -x -C rootfs
+      - name: Every executable runs under cortex-a72 (no SIGILL)
+        run: ./scripts/tools-smoke.sh rootfs
+      - name: Smoke test the image filesystem (QEMU cortex-a72, master + tserver + YSQL)
+        timeout-minutes: 30
+        run: |
           ls -l rootfs/home/yugabyte/bin/yb-master rootfs/home/yugabyte/bin/yb-tserver
           ./scripts/ysql-smoke.sh rootfs /__w/yugabyte-pi/yugabyte-pi/yb/build/release-clang17-dynamic-ninja
       - name: Scan the whole image for instructions a Pi 4 lacks (outline-atomic helpers ignored)
