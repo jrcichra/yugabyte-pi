@@ -106,7 +106,7 @@ jobs:
           TP=$(cat "$B/thirdparty_path.txt"); echo "thirdparty: $TP"
           ROOT=$PWD/$B
           { for f in bin lib postgres share openssl-config gflag_allowlist.txt master_flags.xml tserver_flags.xml auto_flags.json version_metadata.json; do echo "$ROOT/$f"; done
-            find "$TP" \( -name '*.so' -o -name '*.so.*' \) ; } | sed 's|^/||' > abs.list
+            find "$TP" \( -name '*.so' -o -name '*.so.*' \) ; echo "$TP/installed/common/bin/redis-cli"; } | sed 's|^/||' > abs.list
           wc -l abs.list
           tar -czf overlay-abs.tgz -C / -T abs.list
           ls -lh overlay.tgz overlay-abs.tgz
