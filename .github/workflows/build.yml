@@ -10,6 +10,9 @@ on:
         default: armv8-a+crc
       build_args:
         default: --clang17 release --no-linuxbrew --skip-java
+      thirdparty_run:
+        description: thirdparty workflow run whose `thirdparty` artifact (a Pi-4 rebuild of yugabyte-db-thirdparty) to build against; empty = upstream's prebuilt armv8.2 set
+        default: ''
 jobs:
   build:
     # A chain of ~55 minute slices sharing a ccache: every slice's log is readable when it ends,
@@ -48,6 +51,21 @@ jobs:
           path: ccache
           key: ccache-unused-${{ github.run_id }}-${{ matrix.slice }}
           restore-keys: ccache-${{ inputs.tag }}-${{ inputs.march }}-
+      - name: Pi-4 thirdparty set
+        if: inputs.thirdparty_run != '' && steps.done.outputs.cache-hit != 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: thirdparty
+          run-id: ${{ inputs.thirdparty_run }}
+          github-token: ${{ github.token }}
+          path: tpdl
+      - name: Unpack thirdparty (same absolute path it was built at, RPATHs point there)
+        if: inputs.thirdparty_run != '' && steps.done.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p /opt/yb-build/thirdparty && tar -xzf tpdl/tp/archive.tar.gz -C /opt/yb-build/thirdparty
+          ls /opt/yb-build/thirdparty/tp | head -20
+          echo "YB_THIRDPARTY_DIR=/opt/yb-build/thirdparty/tp" >> "$GITHUB_ENV"
+          rm -rf tpdl
       - name: Build slice ${{ matrix.slice }}
         id: build
         if: steps.done.outputs.cache-hit != 'true'
