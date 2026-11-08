@@ -47,6 +47,19 @@ jobs:
           timeout 90 qemu-aarch64-static -cpu cortex-a72 -L rootfs rootfs$BUILD/bin/yb-master \
             --master_addresses=127.0.0.1:7100 --rpc_bind_addresses=127.0.0.1:7100 \
             --fs_data_dirs=/tmp/m --replication_factor=1 --use_private_ip=never 2>&1 | tail -40 || true
+      - name: Where does the SIGILL happen?
+        continue-on-error: true
+        run: |
+          P=rootfs$BUILD/postgres/bin/postgres
+          echo "--- library load order (last 25)"
+          qemu-aarch64-static -cpu cortex-a72 -L rootfs -E LD_DEBUG=libs "$P" --version 2>&1 | grep -E 'calling init|error|find library|Illegal' | tail -25
+          echo "--- last translated blocks before the crash"
+          qemu-aarch64-static -cpu cortex-a72 -L rootfs -singlestep -d in_asm,nochain -D trace.txt "$P" --version >/dev/null 2>&1 || true
+          ls -l trace.txt; tail -30 trace.txt
+          echo "--- mapping the last pc to a library"
+          last=$(grep -oE '^0x[0-9a-f]+' trace.txt | tail -1); echo "last pc $last"
+          qemu-aarch64-static -cpu cortex-a72 -L rootfs -d page -D pages.txt "$P" --version >/dev/null 2>&1 || true
+          grep -E '^[0-9a-f]+-[0-9a-f]+ ' pages.txt | head -80
       - uses: actions/upload-artifact@v4
         if: always()
         with: { name: verify, path: libs.txt }
