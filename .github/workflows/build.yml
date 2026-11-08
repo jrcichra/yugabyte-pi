@@ -66,6 +66,32 @@ jobs:
           if [ "$rc" = 124 ]; then echo "slice timed out; next slice continues from ccache"; exit 0; fi
           if [ "$rc" = 0 ]; then touch ../done.marker; echo finished=true >> "$GITHUB_OUTPUT"; fi
           exit $rc
+      - name: Package and scan
+        id: pkg
+        if: steps.build.outputs.finished == 'true'
+        run: |
+          B=yb/build/release-clang17-dynamic-ninja
+          ls "$B" "$B/bin" "$B/lib" 2>&1 | head -80
+          mkdir overlay
+          tar -c -C "$B" bin/yb-master bin/yb-tserver lib postgres | tar -x -C overlay
+          du -sh overlay/*
+          # ARMv8.1+ atomics / dotprod / rcpc that a Pi 4 (cortex-a72) lacks, per ELF file
+          command -v objdump >/dev/null || dnf -q -y install binutils >/dev/null 2>&1
+          find overlay -type f | while read -r f; do
+            file -b "$f" | grep -q 'ELF 64-bit' || continue
+            n=$(objdump -d --no-show-raw-insn "$f" 2>/dev/null | awk '$2 ~ /^(ldadd|ldclr|ldeor|ldset|swp|cas|casp|ldapr|ldapur|sdot|udot)[a-z]*$/ {c++} END{print c+0}')
+            echo "$n $f"
+          done | sort -rn | tee scan.txt | head -40
+          tar -czf overlay.tgz -C overlay .
+          ls -lh overlay.tgz
+      - uses: actions/upload-artifact@v4
+        if: steps.pkg.outcome == 'success'
+        with:
+          name: overlay
+          path: |
+            overlay.tgz
+            scan.txt
+          compression-level: 0
       - name: Save ccache
         if: always() && steps.done.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
