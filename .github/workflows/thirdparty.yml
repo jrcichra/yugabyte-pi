@@ -25,6 +25,8 @@ jobs:
           mkdir -p /opt/yb-build/thirdparty/tp && cd /opt/yb-build/thirdparty/tp
           git init -q && git remote add origin https://github.com/yugabyte/yugabyte-db-thirdparty.git
           git fetch -q --depth 1 origin ${{ inputs.commit }} && git checkout -q FETCH_HEAD
+      - name: Rust (clockbound wants ~/.cargo/bin/cargo)
+        run: curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal && ~/.cargo/bin/cargo --version
       - name: Patch CPU flags
         working-directory: /opt/yb-build/thirdparty/tp
         run: |
