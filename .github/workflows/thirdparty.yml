@@ -57,8 +57,8 @@ jobs:
           # route github release downloads through the API (see scripts/curl-gh)
           git clone -q --depth 1 https://github.com/${{ github.repository }} /opt/pi && install -m755 /opt/pi/scripts/curl-gh /usr/local/bin/curl-gh
           sed -i 's|self.curl_path = .*|self.curl_path = "/usr/local/bin/curl-gh"|' python/yugabyte_db_thirdparty/download_manager.py
-          # github /archive/ tarballs are not byte-stable (gzip output drifts), so the tag pins the source there; everything else stays verified
-          sed -i "s|if not self.verify_checksum(file_path, expected_checksum):|if not (self.verify_checksum(file_path, expected_checksum) or re.search(r'github[.]com/[^/]+/[^/]+/archive/', effective_url)):|" python/yugabyte_db_thirdparty/download_manager.py
+          # github /archive/ tarballs are not byte-stable (gzip output drifts), so the tag pins the source there, but the file must still be a valid gzip/zip (not an error page); everything else stays verified
+          sed -i "s|if not self.verify_checksum(file_path, expected_checksum):|if not (self.verify_checksum(file_path, expected_checksum) or (re.search(r'github[.]com/[^/]+/[^/]+/archive/', effective_url) and subprocess.call(['sh', '-c', 'gzip -t "$0" 2>/dev/null || unzip -tq "$0" >/dev/null 2>&1', file_path]) == 0)):|" python/yugabyte_db_thirdparty/download_manager.py
           git diff; nproc; free -g | head -2
       - uses: actions/cache/restore@v4
         with:
