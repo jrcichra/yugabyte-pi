@@ -43,6 +43,13 @@ jobs:
           D=yb-llvm-$T; mkdir x && tar -xzf $N -C x && top=$(ls x); echo "archive top: $top"
           if [ "$(echo "$top" | wc -l)" = 1 ]; then mv "x/$top" "$D"; else mv x "$D"; fi
           rmdir x 2>/dev/null || true; rm -f $N $N.sha256; ls "$D" | head
+      - name: Pre-fetch openssl 3.0.16 via the API (openssl.org redirects to the 504ing release URL)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p /opt/yb-build/thirdparty/tp/download
+          gh api -H "Accept: application/octet-stream" repos/openssl/openssl/releases/assets/228202287 > /opt/yb-build/thirdparty/tp/download/openssl-3.0.16.tar.gz
+          echo "57e03c50feab5d31b152af2b764f10379aecd8ee92f16c985983ce4a99f7ef86  /opt/yb-build/thirdparty/tp/download/openssl-3.0.16.tar.gz" | sha256sum -c
       - name: Patch CPU flags
         working-directory: /opt/yb-build/thirdparty/tp
         run: |
