@@ -2,7 +2,7 @@
 # curl wrapper for the thirdparty downloader (usage: curl -o FILE -L --silent --show-error --location URL).
 # GitHub is intermittently answering 504 (a 92-byte "Gateway Time-out" page) for downloads; releases/download
 # URLs (also via redirects, e.g. openssl.org) fail persistently but work through the API. So: use `gh api`
-# for release assets, real curl otherwise, and retry with backoff while the answer is the 504 page.
+# for release assets, real curl otherwise, and retry with backoff while the answer is a small HTML/error page (504, 502, rate limit, ...).
 out=""; url=""; prev=""
 for a in "$@"; do [ "$prev" = -o ] && out=$a; prev=$a; url=$a; done
 re='^https://github\.com/([^/]+)/([^/]+)/releases/download/([^/]+)/([^/?]+)'
@@ -20,8 +20,8 @@ fetch() {
 }
 
 for i in 1 2 3 4 5 6 7 8; do
-  fetch "$@" && ! { [ -f "$out" ] && [ "$(stat -c %s "$out")" -lt 300 ] && grep -q "504 Gateway" "$out"; } && exit 0
-  echo "curl-gh: attempt $i failed or got a 504 page for $url; retrying" >&2
+  fetch "$@" && ! { [ -f "$out" ] && [ "$(stat -c %s "$out")" -lt 1000 ] && grep -qiE '<html|gateway|time-?out|rate.?limit|too many|unavailable' "$out"; } && exit 0
+  echo "curl-gh: attempt $i failed or got an error page for $url ($(head -c 120 "$out" 2>/dev/null | tr -d "\n")); retrying" >&2
   sleep $((i * 15))
 done
 exit 1
