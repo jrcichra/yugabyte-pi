@@ -40,13 +40,19 @@ jobs:
           for b in $BUILD/bin/yb-master $BUILD/bin/yb-tserver $BUILD/postgres/bin/postgres; do
             echo "=== $b"; qemu-aarch64-static -cpu cortex-a72 -L rootfs rootfs$b --version 2>&1 | tail -3
           done
-      - name: yb-master for 90s under cortex-a72
+      - name: yb-master + yb-tserver for 100s under cortex-a72 (SIGKILL afterwards; qemu forwards SIGTERM to the guest)
         continue-on-error: true
         run: |
-          mkdir -p rootfs/tmp/m; ls rootfs$BUILD/bin
-          timeout 90 qemu-aarch64-static -cpu cortex-a72 -L rootfs rootfs$BUILD/bin/yb-master \
+          mkdir -p /tmp/m /tmp/t
+          qemu-aarch64-static -cpu cortex-a72 -L rootfs rootfs$BUILD/bin/yb-master \
             --master_addresses=127.0.0.1:7100 --rpc_bind_addresses=127.0.0.1:7100 \
-            --fs_data_dirs=/tmp/m --replication_factor=1 --use_private_ip=never 2>&1 | tail -40 || true
+            --fs_data_dirs=/tmp/m --replication_factor=1 --use_private_ip=never --logtostderr > master.log 2>&1 &
+          sleep 100
+          echo "--- master alive? $(pgrep -f 'qemu-aarch64.*yb-master' | wc -l) qemu procs"
+          pkill -9 -f qemu-aarch64 || true
+          echo "--- master.log: signals / leader / errors"
+          grep -n -E "Illegal|signal|SIGILL|Check failed|Became leader|leader|Running on|started|FATAL|error" master.log | head -30
+          echo "--- master.log tail"; tail -25 master.log | cut -c1-250
       - name: Where does the SIGILL happen?
         continue-on-error: true
         run: |
@@ -62,4 +68,8 @@ jobs:
           grep -E '^[0-9a-f]+-[0-9a-f]+ ' pages.txt | head -80
       - uses: actions/upload-artifact@v4
         if: always()
-        with: { name: verify, path: libs.txt }
+        with:
+          name: verify
+          path: |
+            libs.txt
+            master.log
