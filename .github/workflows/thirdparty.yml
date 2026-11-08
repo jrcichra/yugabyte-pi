@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 360
     container:
       image: yugabyteci/yb_build_infra_almalinux8_aarch64:v2026-01-27T21_32_05
-      options: --user root
+      options: --user root --init
     steps:
       - name: Source
         run: |
