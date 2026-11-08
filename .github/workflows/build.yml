@@ -83,13 +83,21 @@ jobs:
             echo "$n $f"
           done | sort -rn | tee scan.txt | head -40
           tar -czf overlay.tgz -C overlay .
-          ls -lh overlay.tgz
+          # standalone tree at its absolute build paths (RPATHs point there) incl. the thirdparty .so files
+          TP=$(cat "$B/thirdparty_path.txt"); echo "thirdparty: $TP"
+          ROOT=$PWD/$B
+          { for f in bin/yb-master bin/yb-tserver lib postgres share openssl-config; do echo "$ROOT/$f"; done
+            find "$TP" \( -name '*.so' -o -name '*.so.*' \) ; } | sed 's|^/||' > abs.list
+          wc -l abs.list
+          tar -czf overlay-abs.tgz -C / -T abs.list
+          ls -lh overlay.tgz overlay-abs.tgz
       - uses: actions/upload-artifact@v4
         if: steps.pkg.outcome == 'success'
         with:
           name: overlay
           path: |
             overlay.tgz
+            overlay-abs.tgz
             scan.txt
           compression-level: 0
       - name: Save ccache

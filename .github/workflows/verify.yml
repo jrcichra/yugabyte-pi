@@ -20,38 +20,31 @@ jobs:
           name: overlay
           run-id: ${{ inputs.run_id }}
           github-token: ${{ github.token }}
-      - name: Upstream rootfs + overlay
+      - name: Upstream rootfs + standalone build tree at its absolute paths
         run: |
-          mkdir rootfs overlay
+          mkdir rootfs
           cid=$(docker create --platform linux/arm64 "${{ inputs.image }}")
           docker export "$cid" | tar -x -C rootfs
-          tar -xzf overlay.tgz -C overlay
-          Y=rootfs/home/yugabyte
-          echo "--- upstream layout"; ls $Y $Y/lib $Y/lib/yb | head -60; ls -l $Y/bin/yb-master $Y/bin/yb-tserver
-          readelf -d $Y/bin/yb-master | grep -E 'NEEDED|RPATH|RUNPATH' | head
-          readelf -d overlay/bin/yb-master | grep -E 'NEEDED|RPATH|RUNPATH' | head
-          cp -f overlay/bin/yb-master overlay/bin/yb-tserver $Y/bin/
-          cp -rf overlay/lib/. $Y/lib/yb/
-          cp -rf overlay/postgres/. $Y/postgres/
-      - name: Scan everything now in the image (which ELFs still carry offenders?)
+          tar -xzf overlay-abs.tgz -C rootfs
+          B=$(cd rootfs && find . -type d -name release-clang17-dynamic-ninja | head -1 | sed 's|^\.||'); echo "BUILD=$B" | tee -a "$GITHUB_ENV"
+      - name: Scan every ELF in the tree (thirdparty included)
         run: |
-          find rootfs/home/yugabyte -type f \( -name '*.so*' -o -path '*/bin/*' \) | while read -r f; do
+          find rootfs$BUILD rootfs/opt rootfs/__w -type f \( -name '*.so*' -o -path '*/bin/*' \) 2>/dev/null | while read -r f; do
             file -b "$f" | grep -q 'ELF 64-bit.*ARM aarch64' || continue
             n=$(aarch64-linux-gnu-objdump -d --no-show-raw-insn "$f" 2>/dev/null | awk '$2 ~ /^(ldadd|ldclr|ldeor|ldset|swp|cas|casp|ldapr|ldapur|sdot|udot)[a-z]*$/ {c++} END{print c+0}')
-            echo "$n ${f#rootfs/home/yugabyte/}"
+            echo "$n ${f#rootfs}"
           done | sort -rn | awk '$1>0' | head -50 | tee libs.txt
       - name: --version under cortex-a72
         continue-on-error: true
         run: |
-          Y=/home/yugabyte
-          for b in $Y/bin/yb-master $Y/bin/yb-tserver $Y/postgres/bin/postgres; do
+          for b in $BUILD/bin/yb-master $BUILD/bin/yb-tserver $BUILD/postgres/bin/postgres; do
             echo "=== $b"; qemu-aarch64-static -cpu cortex-a72 -L rootfs rootfs$b --version 2>&1 | tail -3
           done
       - name: yb-master for 90s under cortex-a72
         continue-on-error: true
         run: |
-          mkdir -p rootfs/tmp/m
-          timeout 90 qemu-aarch64-static -cpu cortex-a72 -L rootfs rootfs/home/yugabyte/bin/yb-master \
+          mkdir -p rootfs/tmp/m; ls rootfs$BUILD/bin
+          timeout 90 qemu-aarch64-static -cpu cortex-a72 -L rootfs rootfs$BUILD/bin/yb-master \
             --master_addresses=127.0.0.1:7100 --rpc_bind_addresses=127.0.0.1:7100 \
             --fs_data_dirs=/tmp/m --replication_factor=1 --use_private_ip=never 2>&1 | tail -40 || true
       - uses: actions/upload-artifact@v4
