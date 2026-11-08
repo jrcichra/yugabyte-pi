@@ -3,7 +3,7 @@
 # upstream arm64 rootfs, then run SQL. usage: ysql-smoke.sh <rootfs dir> <absolute build dir inside it>
 set -u
 R=$(realpath "$1"); B=$2
-sudo mount --bind /proc "$R/proc"; sudo mount --bind /dev "$R/dev"
+sudo mount --bind /proc "$R/proc"; sudo mount --bind /dev "$R/dev"; sudo mount --bind /sys "$R/sys"
 sudo mkdir -p "$R/tmp/m" "$R/tmp/t"; sudo chown -R 10001:10001 "$R/tmp"
 ls /proc/sys/fs/binfmt_misc/ | head
 run() { sudo env QEMU_CPU=cortex-a72 HOME=/tmp chroot --userspec=10001:10001 "$R" "$@"; }
@@ -18,6 +18,7 @@ run "$B/bin/yb-tserver" --tserver_master_addrs=127.0.0.1:7100 --rpc_bind_address
 ok=0
 for i in $(seq 1 90); do   # up to 15 min; QEMU is slow
   sleep 10
+  if grep -q -E "Check failed|uncaught target signal" master.log tserver.log 2>/dev/null; then echo "server crashed, giving up"; break; fi
   if out=$(run "$B/postgres/bin/ysqlsh" -h 127.0.0.1 -p 5433 -U yugabyte -v ON_ERROR_STOP=1 \
       -c "select version()" -c "create table t(a int primary key, b text)" \
       -c "insert into t values (1,'pi4'),(2,'ok')" -c "select * from t order by a" 2>&1); then
