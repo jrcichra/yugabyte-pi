@@ -1,0 +1,66 @@
+name: thirdparty
+# Rebuild yugabyte-db-thirdparty (libc++, absl, tcmalloc, openssl, ...) for plain ARMv8.0 (Pi 4).
+# Upstream's prebuilt set is -march=armv8.2-a+rcpc+...; libc++ already SIGILLs on a Cortex-A72 (LDAPRB).
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        default: a688dff1ce66bc405d4ae1e7dd466cfa9f989f90
+      march:
+        default: armv8-a+crc
+      mtune:
+        default: cortex-a72
+jobs:
+  thirdparty:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 360
+    container:
+      image: yugabyteci/yb_build_infra_almalinux8_aarch64:v2026-01-27T21_32_05
+      options: --user root
+    steps:
+      - name: Source
+        run: |
+          dnf -q -y install git >/dev/null 2>&1 || true
+          git config --global --add safe.directory '*'
+          mkdir -p /opt/yb-build/thirdparty/tp && cd /opt/yb-build/thirdparty/tp
+          git init -q && git remote add origin https://github.com/yugabyte/yugabyte-db-thirdparty.git
+          git fetch -q --depth 1 origin ${{ inputs.commit }} && git checkout -q FETCH_HEAD
+      - name: Patch CPU flags
+        working-directory: /opt/yb-build/thirdparty/tp
+        run: |
+          sed -i "s|'-march=armv8.2-a+fp16+rcpc+dotprod+crypto'|'-march=${{ inputs.march }}'|; s|'-mtune=neoverse-n1'|'-mtune=${{ inputs.mtune }}'|" python/yugabyte_db_thirdparty/builder.py
+          git diff; nproc; free -g | head -2
+      - uses: actions/cache/restore@v4
+        with:
+          path: ccache
+          key: tp-ccache-unused-${{ github.run_id }}
+          restore-keys: tp-ccache-${{ inputs.commit }}-${{ inputs.march }}-
+      - name: Build (stops itself at 5h40m so the ccache still gets saved)
+        working-directory: /opt/yb-build/thirdparty/tp
+        env:
+          CCACHE_DIR: ${{ github.workspace }}/ccache
+          CCACHE_MAXSIZE: 8G
+          YB_THIRDPARTY_ARCHIVE_NAME_SUFFIX: pi
+        run: |
+          set -o pipefail
+          timeout 340m stdbuf -oL -eL ./build_thirdparty.sh --toolchain=llvm17 --skip-sanitizers \
+            --use-ccache --concise-output --create-package --cleanup-before-packaging 2>&1 | tee ../tp.log | stdbuf -oL cut -c1-300
+          rc=${PIPESTATUS[0]}; echo "rc=$rc"
+          ls -lh archive.tar.gz* 2>&1
+          [ "$rc" = 124 ] && { echo "timed out; rerun continues from ccache"; exit 0; }
+          exit $rc
+      - name: Save ccache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ccache
+          key: tp-ccache-${{ inputs.commit }}-${{ inputs.march }}-${{ github.run_id }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: thirdparty
+          path: |
+            /opt/yb-build/thirdparty/tp/archive.tar.gz
+            /opt/yb-build/thirdparty/tp/archive.tar.gz.sha256
+            /opt/yb-build/thirdparty/tp.log
+          compression-level: 0
