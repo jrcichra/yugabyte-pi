@@ -4,6 +4,7 @@
 set -u
 R=$(realpath "$1"); B=$2
 sudo mount --bind /proc "$R/proc"; sudo mount --bind /dev "$R/dev"; sudo mount --bind /sys "$R/sys"
+sudo mount -t tmpfs -o mode=1777 tmpfs "$R/dev/shm"   # YSQL backends create shared-memory exchanges here (a plain --bind /dev leaves it root-only)
 sudo chmod -R a+rX "$R/__w" "$R/opt/yb-build" 2>/dev/null   # CI build files are root-only; the image build must do the same
 sudo mkdir -p "$R/tmp/m" "$R/tmp/t"; sudo chown -R 10001:10001 "$R/tmp"
 ls /proc/sys/fs/binfmt_misc/ | head
