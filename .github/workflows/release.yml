@@ -168,7 +168,7 @@ jobs:
           crane flatten $L:overlay -t $L:flat
           echo "upstream arm64: $(crane manifest --platform linux/arm64 ${{ inputs.base }} | jq '[.layers[].size]|add/1e6|floor') MB compressed"
           echo "ours (flat):    $(crane manifest $L:flat | jq '[.layers[].size]|add/1e6|floor') MB compressed"
-          mkdir rootfs && crane export $L:flat - | tar -x -C rootfs
+          mkdir rootfs && crane export $L:flat - | sudo tar -x -C rootfs
       - name: Every executable runs as a Cortex-A72 (no SIGILL)
         run: ./scripts/tools-smoke.sh rootfs
       - name: Master + tserver + YSQL create/insert/select as a Cortex-A72
