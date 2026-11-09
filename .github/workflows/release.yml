@@ -164,14 +164,27 @@ jobs:
           path: |
             master.log
             tserver.log
+
+  # separate job: the smoke test's pkill of qemu guests also kills the buildkit builder in the same runner
+  publish:
+    needs: image
+    if: inputs.publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+        with: { platforms: arm64 }
+      - uses: docker/setup-buildx-action@v3
+      - uses: actions/download-artifact@v4
+        with: { name: tree }
       - uses: docker/login-action@v3
-        if: inputs.publish
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
       - name: Publish ghcr.io/${{ github.repository_owner }}/yugabyte-pi:${{ inputs.tag }} (amd64 stock + arm64 Pi 4)
-        if: inputs.publish
         run: |
+          mkdir image/ctx && tar -xzf tree.tgz -C image/ctx && sudo chmod -R a+rX image/ctx
           docker buildx build --platform linux/amd64,linux/arm64 --build-arg BASE=${{ inputs.base }} --build-arg B=$BUILD_DIR \
             -t ghcr.io/${{ github.repository_owner }}/yugabyte-pi:${{ inputs.tag }} --push image
