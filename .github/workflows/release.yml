@@ -125,6 +125,10 @@ jobs:
         run: |
           B=yb/build/release-clang17-dynamic-ninja; TP=$(cat "$B/thirdparty_path.txt")
           ROOT=$PWD/$B
+          # drop debug info (the tree is ~1GB with it); the image only needs the runtime
+          STRIP=$(command -v strip || ls /opt/yb-build/llvm/*/bin/llvm-strip | head -1)
+          find "$ROOT/bin" "$ROOT/lib" "$ROOT/postgres" "$TP" -type f \( -name '*.so' -o -name '*.so.*' -o -perm -u+x \) \
+            -exec sh -c 'for f; do [ "$(head -c4 "$f")" = "$(printf "\177ELF")" ] && "$0" --strip-unneeded "$f" 2>/dev/null; done; true' "$STRIP" {} +
           { for f in bin lib postgres share openssl-config gflag_allowlist.txt master_flags.xml tserver_flags.xml auto_flags.json version_metadata.json; do echo "$ROOT/$f"; done
             find "$TP" \( -name '*.so' -o -name '*.so.*' \); echo "$TP/installed/common/bin/redis-cli"; } | sed 's|^/||' > tree.list
           tar -czf tree.tgz -C / -T tree.list && ls -lh tree.tgz
@@ -139,19 +143,32 @@ jobs:
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 90
+    services:
+      registry:   # holds the arm64 image between overlay -> flatten -> test -> publish
+        image: registry:2
+        ports: ['5000:5000']
+    env:
+      L: localhost:5000/yugabyte-pi
+      G: ghcr.io/${{ github.repository_owner }}/yugabyte-pi
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-qemu-action@v3
         with: { platforms: arm64 }
-      - uses: docker/setup-buildx-action@v3
       - uses: actions/download-artifact@v4
         with: { name: tree }
-      - name: Build the arm64 image
+      - name: Tools
+        run: |
+          gh release download v0.20.3 -R google/go-containerregistry -p '*Linux_x86_64.tar.gz' -O - | sudo tar -xz -C /usr/local/bin crane
+        env: { GH_TOKEN: '${{ github.token }}' }
+      - name: Overlay onto upstream arm64, then flatten to one layer
         run: |
           mkdir image/ctx && tar -xzf tree.tgz -C image/ctx && sudo chmod -R a+rX image/ctx
-          docker buildx build --platform linux/arm64 --build-arg BASE=${{ inputs.base }} --build-arg B=$BUILD_DIR -t yugabyte-pi:test --load image
-          cid=$(docker create --platform linux/arm64 yugabyte-pi:test)
-          mkdir rootfs && docker export "$cid" | tar -x -C rootfs
+          docker build --platform linux/arm64 --build-arg BASE=${{ inputs.base }} --build-arg B=$BUILD_DIR -t $L:overlay image
+          docker push -q $L:overlay
+          crane flatten $L:overlay -t $L:flat
+          echo "upstream arm64: $(crane manifest --platform linux/arm64 ${{ inputs.base }} | jq '[.layers[].size]|add/1e6|floor') MB compressed"
+          echo "ours (flat):    $(crane manifest $L:flat | jq '[.layers[].size]|add/1e6|floor') MB compressed"
+          mkdir rootfs && crane export $L:flat - | tar -x -C rootfs
       - name: Every executable runs as a Cortex-A72 (no SIGILL)
         run: ./scripts/tools-smoke.sh rootfs
       - name: Master + tserver + YSQL create/insert/select as a Cortex-A72
@@ -164,27 +181,16 @@ jobs:
           path: |
             master.log
             tserver.log
-
-  # separate job: the smoke test's pkill of qemu guests also kills the buildkit builder in the same runner
-  publish:
-    needs: image
-    if: inputs.publish
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-qemu-action@v3
-        with: { platforms: arm64 }
-      - uses: docker/setup-buildx-action@v3
-      - uses: actions/download-artifact@v4
-        with: { name: tree }
       - uses: docker/login-action@v3
+        if: inputs.publish
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
-      - name: Publish ghcr.io/${{ github.repository_owner }}/yugabyte-pi:${{ inputs.tag }} (amd64 stock + arm64 Pi 4)
+      - name: "Publish ${{ inputs.tag }} (our arm64 + upstream's stock amd64, merged)"
+        if: inputs.publish
         run: |
-          mkdir image/ctx && tar -xzf tree.tgz -C image/ctx && sudo chmod -R a+rX image/ctx
-          docker buildx build --platform linux/amd64,linux/arm64 --build-arg BASE=${{ inputs.base }} --build-arg B=$BUILD_DIR \
-            -t ghcr.io/${{ github.repository_owner }}/yugabyte-pi:${{ inputs.tag }} --push image
+          crane copy $L:flat $G:${{ inputs.tag }}-arm64
+          crane copy ${{ inputs.base }}@$(crane digest --platform linux/amd64 ${{ inputs.base }}) $G:${{ inputs.tag }}-amd64
+          crane index append -t $G:${{ inputs.tag }} -m $G:${{ inputs.tag }}-arm64 -m $G:${{ inputs.tag }}-amd64
+          crane manifest $G:${{ inputs.tag }} | jq -c '.manifests[]|{digest,platform}'
