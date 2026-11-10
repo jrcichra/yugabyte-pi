@@ -14,7 +14,7 @@ on:
         default: yugabytedb/yugabyte:2024.2.7.3-b1
       tag:
         description: published tag
-        default: 2024.2.7.3-b1
+        default: 2024.2.7.3-b2
       thirdparty_commit:
         default: a688dff1ce66bc405d4ae1e7dd466cfa9f989f90
       publish:
@@ -54,6 +54,7 @@ jobs:
           git fetch -q --depth 1 origin ${{ inputs.thirdparty_commit }} && git checkout -q FETCH_HEAD
           sed -i "s|'-march=armv8.2-a+fp16+rcpc+dotprod+crypto'|'-march=$MARCH'|; s|'-mtune=neoverse-n1'|'-mtune=$MTUNE'|" python/yugabyte_db_thirdparty/builder.py
           python3 "$GITHUB_WORKSPACE/scripts/patch-downloader.py"
+          python3 "$GITHUB_WORKSPACE/scripts/patch-tcmalloc.py"
           git diff --stat
       - uses: actions/cache/restore@v4
         with:
