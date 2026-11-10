@@ -10,10 +10,14 @@ The prebuilt thirdparty libraries (libc++, abseil, tcmalloc, ...) have the same 
 ## Image
 
 ```
-docker pull ghcr.io/jrcichra/yugabyte-pi:2024.2.7.3-b1
+docker pull ghcr.io/jrcichra/yugabyte-pi:2024.2.7.3-b2
 ```
 
-One multi-platform tag: `linux/amd64` is upstream's stock `yugabytedb/yugabyte:2024.2.7.3-b1`, untouched;
+Tags: `2024.2.7.3-bN` is an immutable build, so pin it. `2024.2.7.3` floats to the newest build.
+`-b1` is broken on real Pi 4s: its tcmalloc assumed a 48-bit address space and `yb-master` / `yb-tserver`
+died at random on start (fixed in `-b2`, which patches `kAddressBits` to 39). Use `-b2` or later on a Pi.
+
+Each tag is one multi-platform image: `linux/amd64` is upstream's stock `yugabytedb/yugabyte:2024.2.7.3-b1`, untouched;
 `linux/arm64` is that image with the server, tools, Postgres and thirdparty libs rebuilt for ARMv8.0.
 Needs a 64-bit OS on the Pi.
 

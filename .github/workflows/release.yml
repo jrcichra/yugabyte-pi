@@ -194,4 +194,6 @@ jobs:
           crane copy $L:flat $G:${{ inputs.tag }}-arm64
           crane copy ${{ inputs.base }}@$(crane digest --platform linux/amd64 ${{ inputs.base }}) $G:${{ inputs.tag }}-amd64
           crane index append -t $G:${{ inputs.tag }} -m $G:${{ inputs.tag }}-arm64 -m $G:${{ inputs.tag }}-amd64
+          # floating tag: the newest build of this Yugabyte version (pin the -bN tag for reproducibility)
+          crane tag $G:${{ inputs.tag }} $(echo '${{ inputs.tag }}' | sed 's/-b[0-9]*$//')
           crane manifest $G:${{ inputs.tag }} | jq -c '.manifests[]|{digest,platform}'
