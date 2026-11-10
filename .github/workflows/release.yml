@@ -111,6 +111,8 @@ jobs:
         working-directory: yb
         env:
           YB_THIRDPARTY_DIR: /opt/yb-build/thirdparty/tp
+          # 2025.x builds pg_parquet (needs a Rust toolchain this container lacks); the Pi image doesn't need it
+          YB_SKIP_EXTRA_PG_EXTENSIONS: "1"
           CCACHE_DIR: ${{ github.workspace }}/ccache
           CCACHE_MAXSIZE: 8G
         run: |
