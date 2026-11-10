@@ -15,7 +15,8 @@ run "$B/bin/yb-master" --master_addresses=127.0.0.1:7100 --rpc_bind_addresses=12
 sleep 60
 run "$B/bin/yb-tserver" --tserver_master_addrs=127.0.0.1:7100 --rpc_bind_addresses=127.0.0.1:9100 \
   --fs_data_dirs=/tmp/t --start_pgsql_proxy --pgsql_proxy_bind_address=127.0.0.1:5433 \
-  --use_private_ip=never --logtostderr > tserver.log 2>&1 &
+  --ysql_yb_enable_ash=false \
+  --use_private_ip=never --logtostderr > tserver.log 2>&1 &   # 2025.x ASH collector bgworker segfaults under qemu-user; also a pointless 64MB buffer on a Pi
 
 ok=0
 for i in $(seq 1 90); do   # up to 15 min; QEMU is slow
