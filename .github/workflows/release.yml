@@ -8,15 +8,15 @@ on:
   workflow_dispatch:
     inputs:
       yb_tag:
-        default: v2024.2.7.3
+        default: v2025.2.8.1
       base:
         description: upstream image to overlay (and to use as-is for amd64)
-        default: yugabytedb/yugabyte:2024.2.7.3-b1
+        default: yugabytedb/yugabyte:2025.2.8.1-b8
       tag:
         description: published tag
-        default: 2024.2.7.3-b2
+        default: 2025.2.8.1-b1
       thirdparty_commit:
-        default: a688dff1ce66bc405d4ae1e7dd466cfa9f989f90
+        default: 648722cbaa4f4dfd0fff9689925f374ee3ef7a32
       publish:
         type: boolean
         default: true
@@ -24,7 +24,7 @@ env:
   MARCH: armv8-a+crc
   MTUNE: cortex-a72
   # the RPATHs bake this path in; the image reproduces it
-  BUILD_DIR: /__w/yugabyte-pi/yugabyte-pi/yb/build/release-clang17-dynamic-ninja
+  BUILD_DIR: /__w/yugabyte-pi/yugabyte-pi/yb/build/release-clang19-dynamic-ninja
 permissions:
   contents: read
   packages: write
@@ -68,7 +68,7 @@ jobs:
           CCACHE_MAXSIZE: 8G
           YB_THIRDPARTY_ARCHIVE_NAME_SUFFIX: pi
         run: |
-          timeout 340m stdbuf -oL -eL ./build_thirdparty.sh --toolchain=llvm17 --skip-sanitizers \
+          timeout 340m stdbuf -oL -eL ./build_thirdparty.sh --toolchain=llvm19 --skip-sanitizers \
             --use-ccache --concise-output --create-package --cleanup-before-packaging 2>&1 | stdbuf -oL cut -c1-300
           exit ${PIPESTATUS[0]}
       - uses: actions/cache/save@v4
@@ -115,7 +115,7 @@ jobs:
           CCACHE_MAXSIZE: 8G
         run: |
           mkdir -p "$CCACHE_DIR"
-          timeout 340m stdbuf -oL -eL ./yb_build.sh --clang17 release --no-linuxbrew --skip-java 2>&1 | stdbuf -oL cut -c1-300
+          timeout 340m stdbuf -oL -eL ./yb_build.sh --clang19 release --no-linuxbrew --skip-java 2>&1 | stdbuf -oL cut -c1-300
           exit ${PIPESTATUS[0]}
       - uses: actions/cache/save@v4
         if: always()
@@ -124,7 +124,7 @@ jobs:
           key: ccache-${{ inputs.yb_tag }}-${{ env.MARCH }}-${{ github.run_id }}
       - name: Package (the runtime tree and the thirdparty libs, at their absolute paths)
         run: |
-          B=yb/build/release-clang17-dynamic-ninja; TP=$(cat "$B/thirdparty_path.txt")
+          B=yb/build/release-clang19-dynamic-ninja; TP=$(cat "$B/thirdparty_path.txt")
           ROOT=$PWD/$B
           # drop debug info (the tree is ~1GB with it); the image only needs the runtime
           STRIP=$(command -v strip || ls /opt/yb-build/llvm/*/bin/llvm-strip | head -1)
