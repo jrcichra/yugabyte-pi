@@ -12,7 +12,7 @@ on:
       qemu_cpu:
         default: cortex-a72
       runner:
-        description: ubuntu-24.04 (QEMU as a Cortex-A72) or ubuntu-24.04-arm (native Neoverse N1, no QEMU: tells a QEMU artifact from a real bug)
+        description: 'ubuntu-24.04 (QEMU as a Cortex-A72) or ubuntu-24.04-arm (native, no QEMU; tells a QEMU artifact from a real bug)'
         default: ubuntu-24.04
       build_dir:
         default: /__w/yugabyte-pi/yugabyte-pi/yb/build/release-clang19-dynamic-ninja
