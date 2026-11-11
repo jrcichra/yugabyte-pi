@@ -10,14 +10,25 @@ The prebuilt thirdparty libraries (libc++, abseil, tcmalloc, ...) have the same 
 ## Image
 
 ```
-docker pull ghcr.io/jrcichra/yugabyte-pi:2024.2.7.3-b2
+docker pull ghcr.io/jrcichra/yugabyte-pi:2025.2.8.1-b1
 ```
 
-Tags: `2024.2.7.3-bN` is an immutable build, so pin it. `2024.2.7.3` floats to the newest build.
-`-b1` is broken on real Pi 4s: its tcmalloc assumed a 48-bit address space and `yb-master` / `yb-tserver`
-died at random on start (fixed in `-b2`, which patches `kAddressBits` to 39). Use `-b2` or later on a Pi.
+Tags: `<version>-bN` is an immutable build, so pin it. `<version>` floats to the newest build.
 
-Each tag is one multi-platform image: `linux/amd64` is upstream's stock `yugabytedb/yugabyte:2024.2.7.3-b1`, untouched;
+| Version | Postgres | Notes |
+|---|---|---|
+| `2025.2.8.1` (current, LTS) | 15 | `-b1` is good on a Pi. It includes the tcmalloc 39-bit fix. |
+| `2024.2.7.3` (old) | 11 | **`-b1` is broken on real Pi 4s**: its tcmalloc assumed a 48-bit address space (Pi kernels have 39) and `yb-master` / `yb-tserver` died at random on start. Fixed in `-b2`. Use `-b2` or later. |
+
+The 2025.x build differs from 2024.x:
+
+- `pg_parquet` is skipped (it needs a Rust toolchain the build container lacks); the Pi image doesn't use it.
+- The ASH collector bgworker segfaults under qemu-user, so the smoke test starts the tserver with ASH off
+  (`ysql_yb_enable_ash=false`). Running ASH on a real Pi is also pointless (a 64 MB buffer), so turn it off there too.
+- Upgrading a 2024.x (PG11) universe to 2025.x needs YSQL's major catalog upgrade, not just a new image. A fresh
+  universe needs nothing special.
+
+Each tag is one multi-platform image: `linux/amd64` is upstream's stock `yugabytedb/yugabyte:<version>-bN`, untouched;
 `linux/arm64` is that image with the server, tools, Postgres and thirdparty libs rebuilt for ARMv8.0.
 Needs a 64-bit OS on the Pi.
 
