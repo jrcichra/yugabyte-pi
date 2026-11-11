@@ -10,13 +10,13 @@ The prebuilt thirdparty libraries (libc++, abseil, tcmalloc, ...) have the same 
 ## Image
 
 ```
-docker pull ghcr.io/jrcichra/yugabyte-pi:2025.2.8.1-b1
+docker pull ghcr.io/jrcichra/yugabyte-pi:2025.2.8.1-b2
 ```
 
 Run it like upstream's image:
 
 ```
-docker run -d -p 5433:5433 -p 7000:7000 -p 9000:9000 ghcr.io/jrcichra/yugabyte-pi:2025.2.8.1-b1 \
+docker run -d -p 5433:5433 -p 7000:7000 -p 9000:9000 ghcr.io/jrcichra/yugabyte-pi:2025.2.8.1-b2 \
   bin/yugabyted start --background=false
 ```
 
@@ -24,7 +24,7 @@ Tags: `<version>-bN` is an immutable build, so pin it. `<version>` floats to the
 
 | Version | Postgres | Notes |
 |---|---|---|
-| `2025.2.8.1` (current, LTS) | 15 | `-b1` is good on a Pi. It includes the tcmalloc 39-bit fix. |
+| `2025.2.8.1` (current, LTS) | 15 | `-b2` has the same extensions as upstream's image (adds `pg_parquet` and `documentdb`, which `-b1` lacked). Both include the tcmalloc 39-bit fix. |
 | `2024.2.7.3` (old) | 11 | **`-b1` is broken on real Pi 4s**: its tcmalloc assumed a 48-bit address space (Pi kernels have 39) and `yb-master` / `yb-tserver` died at random on start. Fixed in `-b2`. Use `-b2` or later. |
 
 The 2025.x build differs from 2024.x:
