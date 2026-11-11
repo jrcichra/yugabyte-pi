@@ -1,4 +1,4 @@
-# arm64 only (amd64 is upstream's stock image, merged in by the workflow). Overlays our ARMv8.0 (Cortex-A72 / Pi 4) build
+# arm64 only (amd64 is upstream's stock image, merged in by the workflow). Overlays our ARMv8.0 (Raspberry Pi 4 and 5) build
 # onto upstream's image; the workflow then `crane flatten`s it so the superseded armv8.2 files don't ship.
 ARG BASE=yugabytedb/yugabyte:2025.2.8.1-b8
 FROM ${BASE}
@@ -13,5 +13,5 @@ RUN set -e; Y=/home/yugabyte; TP=/opt/yb-build/thirdparty/tp/installed; \
     cp -a $TP/uninstrumented/lib/*.so* $TP/uninstrumented/libcxx/lib/*.so* $TP/common/lib/*.so* $Y/lib/yb-thirdparty/; \
     cp -f $TP/common/bin/redis-cli $Y/bin/redis-cli
 LABEL org.opencontainers.image.source="https://github.com/jrcichra/yugabyte-pi" \
-      org.opencontainers.image.description="YugabyteDB: stock on amd64, ARMv8.0 (Raspberry Pi 4) build on arm64" \
+      org.opencontainers.image.description="YugabyteDB: stock on amd64, ARMv8.0 (Raspberry Pi 4 and 5) build on arm64" \
       org.opencontainers.image.licenses="Apache-2.0"

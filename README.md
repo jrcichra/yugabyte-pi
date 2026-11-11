@@ -1,11 +1,12 @@
 # yugabyte-pi
 
-[YugabyteDB](https://github.com/yugabyte/yugabyte-db) for the Raspberry Pi 4 (Cortex-A72, ARMv8.0-A).
+[YugabyteDB](https://github.com/yugabyte/yugabyte-db) for the Raspberry Pi 4 and 5.
 
 The official arm64 release builds are compiled with
 `-march=armv8.2-a+fp16+rcpc+dotprod+crypto -mtune=neoverse-n1`, so `yb-master` / `yb-tserver`
 die with `SIGILL` on a Pi 4 ([yugabyte-db#26820](https://github.com/yugabyte/yugabyte-db/issues/26820)).
-This repo rebuilds YugabyteDB and its thirdparty libraries for ARMv8.0.
+This repo rebuilds YugabyteDB and its thirdparty libraries for plain ARMv8.0-A (the Pi 4's Cortex-A72 is the baseline),
+so one image runs on both.
 
 ## Image
 
@@ -36,8 +37,8 @@ Tested on a Pi 4 (under QEMU in CI) and a Pi 5 (Cortex-A76, 16K-page kernel; mas
 1. **check**: the inputs agree with each other, and the tag isn't already published.
 2. **thirdparty**: rebuild [yugabyte-db-thirdparty](https://github.com/yugabyte/yugabyte-db-thirdparty) with `-march=armv8-a+crc`.
 3. **build**: rebuild `yb-master`, `yb-tserver`, Postgres and the tools against it.
-4. **image**: overlay onto upstream's arm64 image, then test it as a Cortex-A72 under QEMU (which raises `SIGILL`
-   on any instruction a Pi 4 lacks): the extension set matches upstream's, every executable runs, and a master +
+4. **image**: overlay onto upstream's arm64 image, then test it as a Cortex-A72 (the Pi 4 core, the oldest target) under QEMU,
+   which raises `SIGILL` on any instruction it lacks: the extension set matches upstream's, every executable runs, and a master +
    tserver + YSQL session does create/insert/select. Only then is the image published.
 5. **verify**: `smoke.yml` runs the published tag natively on arm64 with stock flags.
 

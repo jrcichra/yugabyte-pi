@@ -1,5 +1,6 @@
 name: release
-# YugabyteDB for the Raspberry Pi 4 (Cortex-A72, ARMv8.0). Upstream's arm64 builds target armv8.2+rcpc and SIGILL on a Pi 4.
+# YugabyteDB for the Raspberry Pi 4 and 5 (built for plain ARMv8.0, tested as a Cortex-A72). Upstream's arm64 builds target
+# armv8.2+rcpc and SIGILL on a Pi 4.
 #   thirdparty: rebuild yugabyte-db-thirdparty (libc++, absl, tcmalloc, ...) for armv8-a
 #   build:      rebuild yb-master/yb-tserver/postgres/tools against it
 #   image:      overlay onto upstream's arm64 image, test every binary + a master/tserver/YSQL session under QEMU as a

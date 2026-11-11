@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Boot master + tserver(+YSQL) from the build tree under QEMU as a Cortex-A72 (Pi 4) in a chroot of the
+# Boot master + tserver(+YSQL) from the build tree under QEMU as a Cortex-A72 (the oldest target, the Pi 4 core) in a chroot of the
 # upstream arm64 rootfs, then run SQL. usage: ysql-smoke.sh <rootfs dir> <absolute build dir inside it>
 # env: TSERVER_FLAGS (extra yb-tserver flags, word-split), QEMU_CPU (default cortex-a72)
 set -u
@@ -28,7 +28,7 @@ for i in $(seq 1 90); do   # up to 15 min; QEMU is slow
   if grep -q -E "Check failed|uncaught target signal" master.log tserver.log 2>/dev/null; then echo "server crashed, giving up"; break; fi
   if out=$(run "$B/postgres/bin/ysqlsh" -h 127.0.0.1 -p 5433 -U yugabyte -v ON_ERROR_STOP=1 \
       -c "select version()" -c "create table t(a int primary key, b text)" \
-      -c "insert into t values (1,'pi4'),(2,'ok')" -c "select * from t order by a" \
+      -c "insert into t values (1,'pi'),(2,'ok')" -c "select * from t order by a" \
       -c "create extension pg_parquet" 2>&1); then
     echo "$out"; ok=1; break
   fi
