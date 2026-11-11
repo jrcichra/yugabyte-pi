@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Boot master + tserver(+YSQL) from the build tree under QEMU as a Cortex-A72 (the oldest target, the Pi 4 core) in a chroot of the
 # upstream arm64 rootfs, then run SQL. usage: ysql-smoke.sh <rootfs dir> <absolute build dir inside it>
-# env: TSERVER_FLAGS (extra yb-tserver flags, word-split), QEMU_CPU (default cortex-a72)
+# env: MASTER_FLAGS / TSERVER_FLAGS (extra flags, word-split), QEMU_CPU (default cortex-a72)
 set -u
+MASTER_FLAGS=${MASTER_FLAGS-}
 TSERVER_FLAGS=${TSERVER_FLAGS-}
 export QEMU_CPU=${QEMU_CPU:-cortex-a72}
 R=$(realpath "$1"); B=$2
@@ -14,8 +15,9 @@ sudo mkdir -p "$R/tmp/m" "$R/tmp/t"; sudo chown -R 10001:10001 "$R/tmp"
 ls /proc/sys/fs/binfmt_misc/ | head   # shows qemu is registered
 run() { sudo env QEMU_CPU="$QEMU_CPU" HOME=/tmp chroot --userspec=10001:10001 "$R" "$@"; }
 
+# shellcheck disable=SC2086
 run "$B/bin/yb-master" --master_addresses=127.0.0.1:7100 --rpc_bind_addresses=127.0.0.1:7100 \
-  --fs_data_dirs=/tmp/m --replication_factor=1 --use_private_ip=never --logtostderr > master.log 2>&1 &
+  --fs_data_dirs=/tmp/m --replication_factor=1 --use_private_ip=never --logtostderr $MASTER_FLAGS > master.log 2>&1 &
 sleep 60
 # shellcheck disable=SC2086
 run "$B/bin/yb-tserver" --tserver_master_addrs=127.0.0.1:7100 --rpc_bind_addresses=127.0.0.1:9100 \

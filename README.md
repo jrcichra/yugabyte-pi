@@ -1,12 +1,12 @@
 # yugabyte-pi
 
-[YugabyteDB](https://github.com/yugabyte/yugabyte-db) for the Raspberry Pi 4 and 5.
+[YugabyteDB](https://github.com/yugabyte/yugabyte-db) for the Raspberry Pi 4 (and anything newer).
 
 The official arm64 release builds are compiled with
 `-march=armv8.2-a+fp16+rcpc+dotprod+crypto -mtune=neoverse-n1`, so `yb-master` / `yb-tserver`
 die with `SIGILL` on a Pi 4 ([yugabyte-db#26820](https://github.com/yugabyte/yugabyte-db/issues/26820)).
 This repo rebuilds YugabyteDB and its thirdparty libraries for plain ARMv8.0-A (the Pi 4's Cortex-A72 is the baseline),
-so one image runs on both.
+so one image runs on any Pi. A Pi 5 (Cortex-A76, ARMv8.2) can also run upstream's stock image.
 
 ## Image
 
@@ -27,8 +27,8 @@ Each tag is one multi-platform image: `linux/amd64` is upstream's stock `yugabyt
 `linux/arm64` is that image with the server, tools, Postgres and thirdparty libs rebuilt for ARMv8.0, and the same
 set of Postgres extensions. Needs a 64-bit OS on the Pi.
 
-Tested on a Pi 4 (under QEMU in CI) and a Pi 5 (Cortex-A76, 16K-page kernel; master + tserver + YSQL with
-`pg_parquet`, ASH on). The ARMv8.0 build runs on both.
+Tested on a Pi 4 (under QEMU in CI) and on a real Pi 5 (16K-page kernel): master + tserver + YSQL, `pg_parquet`
+and ASH on, for both this image and upstream's.
 
 ## Pipeline
 
