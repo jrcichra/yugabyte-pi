@@ -1,0 +1,13 @@
+name: lint
+on:
+  push: { branches: [main] }
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: shellcheck scripts/*.sh scripts/curl-gh
+      - run: python3 -m py_compile scripts/*.py

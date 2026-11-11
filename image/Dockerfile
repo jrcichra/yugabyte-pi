@@ -1,6 +1,6 @@
 # arm64 only (amd64 is upstream's stock image, merged in by the workflow). Overlays our ARMv8.0 (Cortex-A72 / Pi 4) build
 # onto upstream's image; the workflow then `crane flatten`s it so the superseded armv8.2 files don't ship.
-ARG BASE=yugabytedb/yugabyte:2024.2.7.3-b1
+ARG BASE=yugabytedb/yugabyte:2025.2.8.1-b8
 FROM ${BASE}
 ARG B
 COPY ctx/ /

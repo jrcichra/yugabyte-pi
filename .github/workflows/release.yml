@@ -27,10 +27,34 @@ env:
   BUILD_DIR: /__w/yugabyte-pi/yugabyte-pi/yb/build/release-clang19-dynamic-ninja
 permissions:
   contents: read
-  packages: write
+concurrency: release   # one build at a time: they share the ccache keys and the published tags
 
 jobs:
+  check:   # fail in seconds, not after a 2h build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: { contents: read, packages: read }
+    env:
+      YB_TAG: ${{ inputs.yb_tag }}
+      BASE: ${{ inputs.base }}
+      TAG: ${{ inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Inputs agree with each other
+        run: |
+          [[ $TAG =~ ^[0-9]+(\.[0-9]+)+-b[0-9]+$ ]] || { echo "tag '$TAG' must look like 2025.2.8.1-b1"; exit 1; }
+          v=${YB_TAG#v}
+          [[ $TAG == "$v"-b* && $BASE == *":$v-b"* ]] || { echo "yb_tag=$YB_TAG, base=$BASE and tag=$TAG are for different versions"; exit 1; }
+      - name: Published -bN tags are immutable
+        if: inputs.publish
+        run: |
+          echo "$GH_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          if docker manifest inspect "ghcr.io/${{ github.repository_owner }}/yugabyte-pi:$TAG" >/dev/null 2>&1; then
+            echo "$TAG is already published; bump -bN"; exit 1
+          fi
+
   thirdparty:
+    needs: check
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 360
     container:
@@ -97,6 +121,8 @@ jobs:
       - name: Source, CPU flags, thirdparty
         run: |
           dnf -q -y install git >/dev/null 2>&1 || true
+          # pg_parquet and documentdb build through pgrx (Rust); the yb build finds cargo in ~/.cargo/bin
+          curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal
           git config --global --add safe.directory '*'
           git clone -q --depth 1 --branch "${{ inputs.yb_tag }}" https://github.com/yugabyte/yugabyte-db.git yb
           sed -i "s|-march=armv8.2-a+fp16+rcpc+dotprod+crypto|-march=$MARCH|; s|ADD_CXX_FLAGS(\"-mtune=neoverse-n1\")|ADD_CXX_FLAGS(\"-mtune=$MTUNE\")|" yb/CMakeLists.txt
@@ -111,8 +137,6 @@ jobs:
         working-directory: yb
         env:
           YB_THIRDPARTY_DIR: /opt/yb-build/thirdparty/tp
-          # 2025.x builds pg_parquet (needs a Rust toolchain this container lacks); the Pi image doesn't need it
-          YB_SKIP_EXTRA_PG_EXTENSIONS: "1"
           CCACHE_DIR: ${{ github.workspace }}/ccache
           CCACHE_MAXSIZE: 8G
         run: |
@@ -146,6 +170,7 @@ jobs:
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 90
+    permissions: { contents: read, packages: write }
     services:
       registry:   # holds the arm64 image between overlay -> flatten -> test -> publish
         image: registry:2
@@ -153,6 +178,8 @@ jobs:
     env:
       L: localhost:5000/yugabyte-pi
       G: ghcr.io/${{ github.repository_owner }}/yugabyte-pi
+      BASE: ${{ inputs.base }}
+      TAG: ${{ inputs.tag }}
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-qemu-action@v3
@@ -166,10 +193,10 @@ jobs:
       - name: Overlay onto upstream arm64, then flatten to one layer
         run: |
           mkdir image/ctx && tar -xzf tree.tgz -C image/ctx && sudo chmod -R a+rX image/ctx
-          docker build --platform linux/arm64 --build-arg BASE=${{ inputs.base }} --build-arg B=$BUILD_DIR -t $L:overlay image
+          docker build --platform linux/arm64 --build-arg BASE=$BASE --build-arg B=$BUILD_DIR -t $L:overlay image
           docker push -q $L:overlay
           crane flatten $L:overlay -t $L:flat
-          echo "upstream arm64: $(crane manifest --platform linux/arm64 ${{ inputs.base }} | jq '[.layers[].size]|add/1e6|floor') MB compressed"
+          echo "upstream arm64: $(crane manifest --platform linux/arm64 $BASE | jq '[.layers[].size]|add/1e6|floor') MB compressed"
           echo "ours (flat):    $(crane manifest $L:flat | jq '[.layers[].size]|add/1e6|floor') MB compressed"
           mkdir rootfs && crane export $L:flat - | sudo tar -x -C rootfs
       - name: Every executable runs as a Cortex-A72 (no SIGILL)
@@ -190,12 +217,12 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
-      - name: "Publish ${{ inputs.tag }} (our arm64 + upstream's stock amd64, merged)"
+      - name: Publish (our arm64 + upstream's stock amd64, merged)
         if: inputs.publish
         run: |
-          crane copy $L:flat $G:${{ inputs.tag }}-arm64
-          crane copy ${{ inputs.base }}@$(crane digest --platform linux/amd64 ${{ inputs.base }}) $G:${{ inputs.tag }}-amd64
-          crane index append -t $G:${{ inputs.tag }} -m $G:${{ inputs.tag }}-arm64 -m $G:${{ inputs.tag }}-amd64
+          crane copy $L:flat $G:$TAG-arm64
+          crane copy $BASE@$(crane digest --platform linux/amd64 $BASE) $G:$TAG-amd64
+          crane index append -t $G:$TAG -m $G:$TAG-arm64 -m $G:$TAG-amd64
           # floating tag: the newest build of this Yugabyte version (pin the -bN tag for reproducibility)
-          crane tag $G:${{ inputs.tag }} $(echo '${{ inputs.tag }}' | sed 's/-b[0-9]*$//')
-          crane manifest $G:${{ inputs.tag }} | jq -c '.manifests[]|{digest,platform}'
+          crane tag $G:$TAG ${TAG%-b*}
+          crane manifest $G:$TAG | jq -c '.manifests[]|{digest,platform}'

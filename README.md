@@ -13,6 +13,13 @@ The prebuilt thirdparty libraries (libc++, abseil, tcmalloc, ...) have the same 
 docker pull ghcr.io/jrcichra/yugabyte-pi:2025.2.8.1-b1
 ```
 
+Run it like upstream's image:
+
+```
+docker run -d -p 5433:5433 -p 7000:7000 -p 9000:9000 ghcr.io/jrcichra/yugabyte-pi:2025.2.8.1-b1 \
+  bin/yugabyted start --background=false
+```
+
 Tags: `<version>-bN` is an immutable build, so pin it. `<version>` floats to the newest build.
 
 | Version | Postgres | Notes |
@@ -44,6 +51,13 @@ One workflow, `.github/workflows/release.yml` (manual dispatch, runs entirely on
 
 `scripts/`: `curl-gh` and `patch-downloader.py` work around GitHub's flaky release downloads and unstable
 `/archive/` tarballs in the thirdparty build; `tools-smoke.sh` and `ysql-smoke.sh` are the tests.
+
+## Releasing
+
+Actions → release → Run workflow. Bump `tag` to the next `-bN` (a published tag is never overwritten; the `check` job
+refuses it, and refuses inputs for mismatched versions) and set `yb_tag`, `base` and `thirdparty_commit` for a new
+Yugabyte version. A full build is about 40 minutes with a warm ccache. Untick `publish` for a dry run that still
+runs both smoke tests. `lint` runs shellcheck on `scripts/`.
 
 Not affiliated with Yugabyte, Inc. YugabyteDB is Apache-2.0 licensed (some features are under a separate
 license); "YugabyteDB" is their trademark.
