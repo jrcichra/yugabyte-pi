@@ -2,6 +2,13 @@ name: smoke
 # Re-run the Cortex-A72 smoke tests against an already-published image (no build): for checking a tag, or
 # trying tserver flags / QEMU CPUs without a 40-minute rebuild.
 on:
+  workflow_call:   # release.yml runs this natively on arm64 (ASH on, stock flags) after publishing
+    inputs:
+      image: { type: string, required: true }
+      runner: { type: string, default: ubuntu-24.04-arm }
+      tserver_flags: { type: string, default: '' }
+      qemu_cpu: { type: string, default: cortex-a72 }
+      build_dir: { type: string, default: /__w/yugabyte-pi/yugabyte-pi/yb/build/release-clang19-dynamic-ninja }
   workflow_dispatch:
     inputs:
       image:

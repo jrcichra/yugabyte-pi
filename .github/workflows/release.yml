@@ -204,7 +204,7 @@ jobs:
       - name: Master + tserver + YSQL create/insert/select as a Cortex-A72
         timeout-minutes: 30
         env:
-          TSERVER_FLAGS: --ysql_yb_enable_ash=false   # TODO: the ASH collector segfaults under qemu-user; see smoke.yml
+          TSERVER_FLAGS: --ysql_yb_enable_ash=false   # the ASH collector segfaults under qemu-user only (fine natively); `verify` covers it
         run: ./scripts/ysql-smoke.sh rootfs "$BUILD_DIR"
       - uses: actions/upload-artifact@v4
         if: always()
@@ -228,3 +228,10 @@ jobs:
           # floating tag: the newest build of this Yugabyte version (pin the -bN tag for reproducibility)
           crane tag $G:$TAG ${TAG%-b*}
           crane manifest $G:$TAG | jq -c '.manifests[]|{digest,platform}'
+
+  verify:   # QEMU can't run the ASH collector (segfaults, native arm64 is fine), so test the published tag natively, ASH on
+    needs: [check, image]
+    if: inputs.publish
+    uses: ./.github/workflows/smoke.yml
+    with:
+      image: ghcr.io/${{ github.repository_owner }}/yugabyte-pi:${{ inputs.tag }}
