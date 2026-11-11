@@ -26,6 +26,9 @@ Each tag is one multi-platform image: `linux/amd64` is upstream's stock `yugabyt
 `linux/arm64` is that image with the server, tools, Postgres and thirdparty libs rebuilt for ARMv8.0, and the same
 set of Postgres extensions. Needs a 64-bit OS on the Pi.
 
+Tested on a Pi 4 (under QEMU in CI) and a Pi 5 (Cortex-A76, 16K-page kernel; master + tserver + YSQL with
+`pg_parquet`, ASH on). The ARMv8.0 build runs on both.
+
 ## Pipeline
 
 `.github/workflows/release.yml` (manual dispatch, runs on GitHub-hosted runners):
