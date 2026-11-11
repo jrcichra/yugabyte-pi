@@ -29,7 +29,6 @@ Tags: `<version>-bN` is an immutable build, so pin it. `<version>` floats to the
 
 The 2025.x build differs from 2024.x:
 
-- `pg_parquet` is skipped (it needs a Rust toolchain the build container lacks); the Pi image doesn't use it.
 - The ASH collector bgworker segfaults under qemu-user but runs fine on native arm64 (checked on a Neoverse N1 runner),
   so the QEMU smoke test starts the tserver with ASH off and a `verify` job re-tests the published tag natively with ASH
   on. ASH is on by default as upstream; it costs a 64 MB buffer, so you may still want `ysql_yb_enable_ash=false` on a Pi.

@@ -199,6 +199,14 @@ jobs:
           echo "upstream arm64: $(crane manifest --platform linux/arm64 $BASE | jq '[.layers[].size]|add/1e6|floor') MB compressed"
           echo "ours (flat):    $(crane manifest $L:flat | jq '[.layers[].size]|add/1e6|floor') MB compressed"
           mkdir rootfs && crane export $L:flat - | sudo tar -x -C rootfs
+      - name: Same extensions as upstream's image (pg_parquet and documentdb need the Rust build)
+        run: |
+          # paths relative to postgres/; ours is a symlink to the build dir with an absolute target, so look there
+          pat='^(share/extension/[^/]+\.control|lib/[^/]+\.so)$'
+          crane export --platform linux/arm64 $BASE - | tar -t | sed 's|^\./||' | sed -n 's|^home/yugabyte/postgres/||p' | grep -E "$pat" | sort > upstream.txt
+          (cd "rootfs$BUILD_DIR/postgres" && find share/extension lib \( -type f -o -type l \) | grep -E "$pat" | sort) > ours.txt
+          wc -l upstream.txt ours.txt
+          missing=$(comm -23 upstream.txt ours.txt); [ -z "$missing" ] || { echo "missing from our image:"; echo "$missing"; exit 1; }
       - name: Every executable runs as a Cortex-A72 (no SIGILL)
         run: ./scripts/tools-smoke.sh rootfs
       - name: Master + tserver + YSQL create/insert/select as a Cortex-A72
