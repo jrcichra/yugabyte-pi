@@ -11,13 +11,16 @@ on:
         default: ''
       qemu_cpu:
         default: cortex-a72
+      runner:
+        description: ubuntu-24.04 (QEMU as a Cortex-A72) or ubuntu-24.04-arm (native Neoverse N1, no QEMU: tells a QEMU artifact from a real bug)
+        default: ubuntu-24.04
       build_dir:
         default: /__w/yugabyte-pi/yugabyte-pi/yb/build/release-clang19-dynamic-ninja
 permissions:
   contents: read
 jobs:
   smoke:
-    runs-on: ubuntu-24.04
+    runs-on: ${{ inputs.runner }}
     timeout-minutes: 45
     env:
       IMAGE: ${{ inputs.image }}
@@ -27,11 +30,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-qemu-action@v3
+        if: inputs.runner == 'ubuntu-24.04'
         with: { platforms: arm64 }
       - name: Tools and rootfs
         env: { GH_TOKEN: '${{ github.token }}' }
         run: |
-          gh release download v0.20.3 -R google/go-containerregistry -p '*Linux_x86_64.tar.gz' -O - | sudo tar -xz -C /usr/local/bin crane
+          gh release download v0.20.3 -R google/go-containerregistry -p "*Linux_$(uname -m | sed 's/x86_64/x86_64/;s/aarch64/arm64/').tar.gz" -O - | sudo tar -xz -C /usr/local/bin crane
           mkdir rootfs && crane export --platform linux/arm64 "$IMAGE" - | sudo tar -x -C rootfs
       - run: ./scripts/tools-smoke.sh rootfs
       - run: ./scripts/ysql-smoke.sh rootfs "$BUILD_DIR"
