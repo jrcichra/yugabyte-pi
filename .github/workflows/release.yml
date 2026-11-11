@@ -203,6 +203,8 @@ jobs:
         run: ./scripts/tools-smoke.sh rootfs
       - name: Master + tserver + YSQL create/insert/select as a Cortex-A72
         timeout-minutes: 30
+        env:
+          TSERVER_FLAGS: --ysql_yb_enable_ash=false   # TODO: the ASH collector segfaults under qemu-user; see smoke.yml
         run: ./scripts/ysql-smoke.sh rootfs "$BUILD_DIR"
       - uses: actions/upload-artifact@v4
         if: always()

@@ -1,0 +1,45 @@
+name: smoke
+# Re-run the Cortex-A72 smoke tests against an already-published image (no build): for checking a tag, or
+# trying tserver flags / QEMU CPUs without a 40-minute rebuild.
+on:
+  workflow_dispatch:
+    inputs:
+      image:
+        default: ghcr.io/jrcichra/yugabyte-pi:2025.2.8.1-b1
+      tserver_flags:
+        description: extra yb-tserver flags
+        default: ''
+      qemu_cpu:
+        default: cortex-a72
+      build_dir:
+        default: /__w/yugabyte-pi/yugabyte-pi/yb/build/release-clang19-dynamic-ninja
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      IMAGE: ${{ inputs.image }}
+      BUILD_DIR: ${{ inputs.build_dir }}
+      TSERVER_FLAGS: ${{ inputs.tserver_flags }}
+      QEMU_CPU: ${{ inputs.qemu_cpu }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+        with: { platforms: arm64 }
+      - name: Tools and rootfs
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: |
+          gh release download v0.20.3 -R google/go-containerregistry -p '*Linux_x86_64.tar.gz' -O - | sudo tar -xz -C /usr/local/bin crane
+          mkdir rootfs && crane export --platform linux/arm64 "$IMAGE" - | sudo tar -x -C rootfs
+      - run: ./scripts/tools-smoke.sh rootfs
+      - run: ./scripts/ysql-smoke.sh rootfs "$BUILD_DIR"
+        timeout-minutes: 30
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-logs
+          path: |
+            master.log
+            tserver.log

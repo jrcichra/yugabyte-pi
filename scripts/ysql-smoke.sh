@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Boot master + tserver(+YSQL) from the build tree under QEMU as a Cortex-A72 (Pi 4) in a chroot of the
 # upstream arm64 rootfs, then run SQL. usage: ysql-smoke.sh <rootfs dir> <absolute build dir inside it>
+# env: TSERVER_FLAGS (extra yb-tserver flags, word-split), QEMU_CPU (default cortex-a72)
 set -u
+TSERVER_FLAGS=${TSERVER_FLAGS-}
+export QEMU_CPU=${QEMU_CPU:-cortex-a72}
 R=$(realpath "$1"); B=$2
 sudo mount --bind /proc "$R/proc"; sudo mount --bind /dev "$R/dev"; sudo mount --bind /sys "$R/sys"
 sudo mount -t tmpfs -o mode=1777 tmpfs "$R/dev/shm"   # YSQL backends create shared-memory exchanges here (a plain --bind /dev leaves it root-only)
@@ -9,15 +12,15 @@ sudo chmod -R a+rX "$R/__w" "$R/opt/yb-build" 2>/dev/null   # CI build files are
 sudo mkdir -p "$R/tmp/m" "$R/tmp/t"; sudo chown -R 10001:10001 "$R/tmp"
 # shellcheck disable=SC2012
 ls /proc/sys/fs/binfmt_misc/ | head   # shows qemu is registered
-run() { sudo env QEMU_CPU=cortex-a72 HOME=/tmp chroot --userspec=10001:10001 "$R" "$@"; }
+run() { sudo env QEMU_CPU="$QEMU_CPU" HOME=/tmp chroot --userspec=10001:10001 "$R" "$@"; }
 
 run "$B/bin/yb-master" --master_addresses=127.0.0.1:7100 --rpc_bind_addresses=127.0.0.1:7100 \
   --fs_data_dirs=/tmp/m --replication_factor=1 --use_private_ip=never --logtostderr > master.log 2>&1 &
 sleep 60
+# shellcheck disable=SC2086
 run "$B/bin/yb-tserver" --tserver_master_addrs=127.0.0.1:7100 --rpc_bind_addresses=127.0.0.1:9100 \
   --fs_data_dirs=/tmp/t --start_pgsql_proxy --pgsql_proxy_bind_address=127.0.0.1:5433 \
-  --ysql_yb_enable_ash=false \
-  --use_private_ip=never --logtostderr > tserver.log 2>&1 &   # 2025.x ASH collector bgworker segfaults under qemu-user; also a pointless 64MB buffer on a Pi
+  --use_private_ip=never --logtostderr $TSERVER_FLAGS > tserver.log 2>&1 &
 
 ok=0
 for i in $(seq 1 90); do   # up to 15 min; QEMU is slow
